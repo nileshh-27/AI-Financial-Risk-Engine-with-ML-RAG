@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { riskAssessments, riskInputSchema } from './schema';
 
+export { riskInputSchema };
+
 export const errorSchemas = {
   validation: z.object({
     message: z.string(),

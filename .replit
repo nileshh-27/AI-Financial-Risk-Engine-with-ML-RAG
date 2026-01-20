@@ -37,3 +37,9 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[userenv]
+
+[userenv.development]
+VITE_SUPABASE_ANON_KEY = "placeholder-key-for-ui-dev"
+VITE_SUPABASE_URL = "https://placeholder.supabase.co"
