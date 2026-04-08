@@ -1,0 +1,16 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.env
+.local/
+.vscode/
+.replit
+replit.nix
+backend/venv/
+backend/models/
+backend/data/
+__pycache__/
+tmp/
