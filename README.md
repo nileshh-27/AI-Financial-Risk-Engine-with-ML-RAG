@@ -2,7 +2,7 @@
 
 An AI-powered financial monitoring platform designed to parse bank statement PDFs, categorize transactions using ML, detect recurring payments, and provide personalized risk assessments with a real-time RAG (Retrieval-Augmented Generation) chatbot.
 
-![Platform Screenshot](https://raw.githubusercontent.com/username/repo/main/public/preview.png) *(Placeholder for your image)*
+<img width="1918" height="906" alt="image" src="https://github.com/user-attachments/assets/51fb8e25-6f0a-4a03-a94d-590d48612db7" />
 
 ## 🚀 Key Features
 
