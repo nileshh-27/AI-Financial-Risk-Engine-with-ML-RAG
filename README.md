@@ -29,7 +29,7 @@ An AI-powered financial monitoring platform designed to parse bank statement PDF
 - **Frontend:** React, Vite, Tailwind CSS, Shadcn UI, Recharts, Framer Motion.
 - **Backend:** Flask (Python 3.10+), Pandas, Scikit-learn, PDFPlumber.
 - **Database:** Supabase (PostgreSQL with RLS), Auth, and Storage.
-- **Security:** 2-minute inactivity auto-logout, JWT session protection.
+- **Security:** MFA Authentication, 2-minute inactivity auto-logout, JWT session protection.
 
 ## ⚙️ Installation & Setup
 
