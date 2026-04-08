@@ -7,7 +7,6 @@ An AI-powered financial monitoring platform designed to parse bank statement PDF
 ## 🚀 Key Features
 
 ### 🏦 Intelligent PDF Parsing
-- **Union Bank Priority:** Specialized extraction logic for Union Bank of India statements.
 - **Transaction Normalization:** Automatically handles `(Dr)` and `(Cr)` suffixes and normalized date formats.
 - **Batch Processing:** Upload multiple years of PDFs to build a deep financial profile.
 
