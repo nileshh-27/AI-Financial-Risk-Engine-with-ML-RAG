@@ -1,5 +1,14 @@
 import { z } from 'zod';
-import { riskAssessments, riskInputSchema } from './schema';
+import { riskAssessmentSchema, riskInputSchema, pdfAnalysisResponseSchema, fyPredictionSchema } from './schema';
+
+export const chatMessageSchema = z.object({
+  role: z.enum(['user', 'assistant', 'system']),
+  content: z.string(),
+});
+
+export const chatRequestSchema = z.object({
+  messages: z.array(chatMessageSchema),
+});
 
 export { riskInputSchema };
 
@@ -27,7 +36,6 @@ export const api = {
           score: z.number(),
           level: z.string(),
           recommendation: z.string(),
-          assessmentId: z.number(),
         }),
         400: errorSchemas.validation,
         401: errorSchemas.unauthorized,
@@ -37,8 +45,36 @@ export const api = {
       method: 'GET' as const,
       path: '/api/risk/history',
       responses: {
-        200: z.array(z.custom<typeof riskAssessments.$inferSelect>()),
+        200: z.array(riskAssessmentSchema),
         401: errorSchemas.unauthorized,
+      },
+    },
+  },
+  analysis: {
+    upload: {
+      method: 'POST' as const,
+      path: '/api/analysis/upload',
+    },
+    predict: {
+      method: 'POST' as const,
+      path: '/api/analysis/predict',
+    },
+    history: {
+      method: 'GET' as const,
+      path: '/api/analysis/history',
+    },
+  },
+  chat: {
+    send: {
+      method: 'POST' as const,
+      path: '/api/chat',
+      input: chatRequestSchema,
+      responses: {
+        200: z.object({
+          message: chatMessageSchema,
+        }),
+        400: errorSchemas.validation,
+        500: errorSchemas.internal,
       },
     },
   },

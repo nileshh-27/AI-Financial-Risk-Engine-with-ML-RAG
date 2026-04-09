@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, writeFile } from "fs/promises";
+import dotenv from "dotenv";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -33,10 +34,29 @@ const allowlist = [
 ];
 
 async function buildAll() {
+  // Load repo-root .env for local builds so we can generate runtime-config.
+  // (Vite also loads .env itself, but drag-and-drop deployments benefit from a separate runtime file.)
+  dotenv.config();
+
   await rm("dist", { recursive: true, force: true });
 
   console.log("building client...");
   await viteBuild();
+
+  // Write runtime Supabase config if values are available.
+  // This allows Netlify drag-and-drop: upload dist/public with config already embedded.
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (supabaseUrl && supabaseAnonKey) {
+    const runtimeConfigJs =
+      "/** Generated at build time. Do not commit secrets here. */\n" +
+      "window.__RISK_DASHBOARD_CONFIG__ = {\n" +
+      `  supabaseUrl: ${JSON.stringify(supabaseUrl)},\n` +
+      `  supabaseAnonKey: ${JSON.stringify(supabaseAnonKey)},\n` +
+      "};\n";
+
+    await writeFile("dist/public/runtime-config.js", runtimeConfigJs, "utf-8");
+  }
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
