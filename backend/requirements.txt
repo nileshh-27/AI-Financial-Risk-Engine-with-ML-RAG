@@ -1,0 +1,11 @@
+flask
+flask-cors
+pdfplumber
+pandas
+numpy
+scikit-learn
+joblib
+python-dotenv
+supabase
+google-genai
+gunicorn
