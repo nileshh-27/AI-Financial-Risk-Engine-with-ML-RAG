@@ -109,6 +109,7 @@ export function useAnalysisHistory() {
             const { data, error } = await supabase
                 .from("pdf_analyses")
                 .select("*")
+                .eq("user_id", sessionData.session.user.id)
                 .order("created_at", { ascending: false })
                 .limit(20);
 

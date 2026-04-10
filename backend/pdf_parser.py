@@ -225,6 +225,8 @@ def parse_union_bank(pdf) -> list[dict]:
 def parse_hdfc_bank(pdf) -> list[dict]:
     """Parse HDFC Bank statement tables."""
     transactions = []
+    # Persist column map across pages — HDFC only prints headers on page 1
+    saved_col_map = None
 
     for page in pdf.pages:
         tables = page.extract_tables()
@@ -237,36 +239,43 @@ def parse_hdfc_bank(pdf) -> list[dict]:
 
             col_map = _detect_hdfc_columns(table)
             
-            # Require minimum recognizable columns to proceed
-            if "date" not in col_map or "narration" not in col_map:
+            # If we found headers on this table, save them
+            if "date" in col_map and "narration" in col_map:
+                saved_col_map = col_map
+            
+            # Use saved column map if current table has no headers
+            active_map = saved_col_map if saved_col_map else col_map
+            
+            # Need at minimum date and narration columns
+            if "date" not in active_map or "narration" not in active_map:
                 continue
 
             for row in table:
-                if not row or len(row) < 5:
+                if not row or len(row) < 3:
                     continue
 
                 row_text = ' '.join([str(c) for c in row if c]).lower()
                 # Skip header / footer rows
-                if any(h in row_text for h in ['narration', 'withdrawal amount', 'deposit amount', 'closing balance', 'opening balance']):
+                if any(h in row_text for h in ['narration', 'withdrawal amount', 'deposit amount', 'closing balance*', 'opening balance', 'statement summary']):
                     continue
 
                 # Extract date
-                date_val = _get_cell(row, col_map.get("date", 0))
+                date_val = _get_cell(row, active_map.get("date", 0))
                 date = parse_date(date_val) if date_val else None
                 if not date:
                     continue
 
                 # Extract Transaction ID/Ref No
-                txn_id = _get_cell(row, col_map.get("ref_no", 2))
+                txn_id = _get_cell(row, active_map.get("ref_no", 2))
 
                 # Extract Remarks
-                remarks = _get_cell(row, col_map.get("narration", 1))
+                remarks = _get_cell(row, active_map.get("narration", 1))
                 if not remarks:
                     continue
 
                 # Determine Type & Amount utilizing split columns
-                withdrawal_raw = _get_cell(row, col_map.get("withdrawal", -1))
-                deposit_raw = _get_cell(row, col_map.get("deposit", -1))
+                withdrawal_raw = _get_cell(row, active_map.get("withdrawal", -1))
+                deposit_raw = _get_cell(row, active_map.get("deposit", -1))
                 
                 amount = 0.0
                 txn_type = "debit"
@@ -287,7 +296,7 @@ def parse_hdfc_bank(pdf) -> list[dict]:
                     continue
 
                 # Extract Balance
-                balance_raw = _get_cell(row, col_map.get("balance", -1))
+                balance_raw = _get_cell(row, active_map.get("balance", -1))
                 balance, _ = parse_amount_with_type(balance_raw)
                 if balance is None:
                     balance = 0.0

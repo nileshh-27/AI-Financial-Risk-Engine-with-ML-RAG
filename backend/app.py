@@ -294,7 +294,7 @@ def chat():
 
         system_prompt = "\n".join(context_parts)
         
-        # 2. Call Gemini
+        # 2. Call Gemini (with retry for free-tier flakiness)
         client = get_gemini_model()
         if not client:
             return jsonify({"message": {"role": "assistant", "content": "I'm sorry, my AI brain (Gemini API) is not configured in the .env file yet. Please contact support."}})
@@ -302,15 +302,31 @@ def chat():
         # Pre-instruct with context
         full_query = f"SYSTEM CONTEXT: {system_prompt}\n\nUSER QUERY: {messages[-1]['content']}"
         
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=full_query
-        )
+        import time
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=full_query
+                )
+                return jsonify({
+                    "message": {
+                        "role": "assistant",
+                        "content": response.text
+                    }
+                })
+            except Exception as retry_err:
+                last_error = retry_err
+                print(f"Gemini attempt {attempt + 1}/3 failed: {retry_err}", file=sys.stderr)
+                if attempt < 2:
+                    time.sleep(1)
         
+        # All retries failed — return a friendly message instead of crashing
         return jsonify({
             "message": {
                 "role": "assistant",
-                "content": response.text
+                "content": "I'm temporarily unable to respond due to high demand on the AI service. Please try again in a few seconds."
             }
         })
 
