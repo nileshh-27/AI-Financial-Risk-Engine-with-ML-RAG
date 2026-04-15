@@ -10,6 +10,31 @@ import type { RiskResponse, PDFAnalysisResponse } from "@shared/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldCheck, FileText } from "lucide-react";
 
+function calculateFastRisk(input: any) {
+  let score = 10;
+  if (input.transactionAmount > 5000) score += 20;
+  if (input.transactionAmount > 10000) score += 20;
+  if (input.transactionAmount > 50000) score += 20;
+  if (input.isInternational) score += 30;
+  const riskyCategories = ["gambling", "crypto", "jewelry"];
+  if (riskyCategories.includes(input.merchantCategory?.toLowerCase() || "")) {
+    score += 40;
+  }
+  score += (input.previousChargebacks || 0) * 50;
+  score = Math.min(100, Math.max(0, score));
+
+  let level = "Low";
+  if (score > 75) level = "High";
+  else if (score > 30) level = "Medium";
+
+  return { 
+    score, 
+    level, 
+    recommendation: "AI is analyzing this transaction. This usually takes 5-10 seconds depending on your hardware, please wait...",
+    assessmentId: "pending..."
+  };
+}
+
 export default function RiskEnginePage() {
   const { mutate, isPending } = useRiskAssessment();
   const { data: history, isLoading: isHistoryLoading } = useRiskHistory();
@@ -36,6 +61,9 @@ export default function RiskEnginePage() {
   }, [analysisHistory, analysisResult]);
 
   const handleAssessment = (data: any) => {
+    // Instantly show rest of data while LLM takes time
+    setLastResult(calculateFastRisk(data));
+    
     mutate(data, {
       onSuccess: (result) => {
         setLastResult(result);

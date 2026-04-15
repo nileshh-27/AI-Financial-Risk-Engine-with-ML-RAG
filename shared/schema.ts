@@ -156,5 +156,6 @@ export const pdfAnalysisResponseSchema = z.object({
   debt_traps: z.array(debtTrapFlagSchema),
   prediction: fyPredictionSchema,
   storage_warning: z.string().optional(),
+  llm_analysis: z.string().optional(),
 });
 export type PDFAnalysisResponse = z.infer<typeof pdfAnalysisResponseSchema>;

@@ -6,37 +6,6 @@ import { useToast } from "@/hooks/use-toast";
 type RiskInput = import("zod").infer<typeof riskInputSchema>;
 type RiskComputeResponse = import("zod").infer<(typeof api)["risk"]["assess"]["responses"][200]>;
 
-function calculateRisk(input: RiskInput): RiskComputeResponse {
-  let score = 10;
-
-  if (input.transactionAmount > 5000) score += 20;
-  if (input.transactionAmount > 10000) score += 20;
-  if (input.transactionAmount > 50000) score += 20;
-
-  if (input.isInternational) score += 30;
-
-  const riskyCategories = ["gambling", "crypto", "jewelry"];
-  if (riskyCategories.includes(input.merchantCategory.toLowerCase())) {
-    score += 40;
-  }
-
-  score += input.previousChargebacks * 50;
-
-  score = Math.min(100, Math.max(0, score));
-
-  let level = "Low";
-  let recommendation = "Approve";
-
-  if (score > 75) {
-    level = "High";
-    recommendation = "Decline";
-  } else if (score > 30) {
-    level = "Medium";
-    recommendation = "Manual Review";
-  }
-
-  return api.risk.assess.responses[200].parse({ score, level, recommendation });
-}
 
 export function useRiskAssessment() {
   const { toast } = useToast();
@@ -48,12 +17,24 @@ export function useRiskAssessment() {
       // Validate input client-side using shared schema
       const validated = api.risk.assess.input.parse(data);
 
-      // For now, compute risk locally (no model/backend wired up yet).
-      // This keeps Netlify deploy static-only while still persisting to Supabase.
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) throw new Error("Please sign in to run an assessment");
 
-      const computed = calculateRisk(validated);
+      // Fetch AI evaluation from new backend endpoint
+      const response = await fetch("/api/risk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify(validated),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to reach Risk Engine API");
+      }
+
+      const computed = await response.json();
 
       // Persist to Supabase (RLS enforces per-user access).
       const { data: userData, error: userErr } = await supabase.auth.getUser();
