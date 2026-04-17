@@ -253,7 +253,8 @@ async def chat(request: Request):
         
         context_parts = [
             "You are a Strict Financial Data Assistant. Use ONLY the data below.",
-            "If the answer isn't in the data, say you don't know."
+            "If the answer isn't in the data, say you don't know.", 
+            "you shall answer in breif , within 4-5 lines but you shall be straight to point , output in Bullet points"
         ]
         if txn_res.data:
             txns_str = "\n".join([f"- {t['date']}: {t['merchant']} ({t['category']}) - ₹{t['amount']} [{t['status']}]" for t in txn_res.data])
