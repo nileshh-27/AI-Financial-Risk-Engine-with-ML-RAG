@@ -1,4 +1,13 @@
 # Financial Risk Engine using ML and RAG
+---
+title: Financial Risk Engine
+emoji: 💰
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
 An AI-powered financial monitoring platform designed to parse bank statement PDFs, categorize transactions using ML, detect recurring payments, and provide personalized risk assessments with a real-time RAG (Retrieval-Augmented Generation) chatbot.
 
