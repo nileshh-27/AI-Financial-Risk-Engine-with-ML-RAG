@@ -343,7 +343,9 @@ async def get_history(request: Request):
 
 # Serve Frontend Static Files
 # Mount static files at the end to avoid catching API routes
-if os.path.exists("client/dist"):
+if os.path.exists("dist/public"):
+    app.mount("/", StaticFiles(directory="dist/public", html=True), name="static")
+elif os.path.exists("client/dist"):
     app.mount("/", StaticFiles(directory="client/dist", html=True), name="static")
 
 if __name__ == "__main__":

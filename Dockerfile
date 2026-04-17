@@ -27,10 +27,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy built frontend from Stage 1 into the backend folder
-# This matches your app.py which serves from client/dist or similar
-COPY --from=build-frontend /app/dist /app/client/dist
 COPY . .
+# Copy built frontend from Stage 1 so app.py can serve it
+COPY --from=build-frontend /app/dist /app/dist
 
 # Environment Variables
 ENV PORT=7860
