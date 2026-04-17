@@ -32,12 +32,12 @@ COPY --from=build-frontend /app/dist /app/client/dist
 COPY . .
 
 # Environment Variables
-ENV PORT=5000
+ENV PORT=7860
 ENV FLASK_ENV=production
 ENV OLLAMA_HOST=0.0.0.0
 
-# Expose port 5000
-EXPOSE 5000
+# Expose port 7860
+EXPOSE 7860
 
 # Ensure entrypoint is executable
 RUN chmod +x scripts/entrypoint.sh

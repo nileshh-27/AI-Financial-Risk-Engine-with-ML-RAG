@@ -21,7 +21,7 @@ export function useRiskAssessment() {
       if (!sessionData.session) throw new Error("Please sign in to run an assessment");
 
       // Fetch AI evaluation from new backend endpoint
-      const response = await fetch("/api/risk", {
+      const response = await fetch(api.risk.assess.path, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

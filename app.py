@@ -282,6 +282,52 @@ async def chat(request: Request):
 
     return StreamingResponse(event_generator(), media_type="text/plain")
 
+@app.post("/api/risk/assess")
+async def assess_risk(request: Request):
+    """
+    Manual Risk Assessment Endpoint.
+    Evaluates transaction metadata and assigns a risk score and level.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    user_info = extract_user_info(auth_header)
+    user_id = user_info.get("user_id")
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    data = await request.json()
+    amount = data.get("transactionAmount", 0)
+    category = data.get("merchantCategory", "unknown")
+    intl = data.get("isInternational", False)
+    chargebacks = data.get("previousChargebacks", 0)
+
+    # Basic risk heuristic
+    score = 10
+    if amount > 10000:
+        score += 30
+    if intl:
+        score += 20
+    if chargebacks > 0:
+        score += 40
+
+    score = min(score, 100)
+
+    if score > 70:
+        level = "High"
+        rec = "Block or require manual verification."
+    elif score > 40:
+        level = "Medium"
+        rec = "Flag for review."
+    else:
+        level = "Low"
+        rec = "Proceed normally."
+
+    return {
+        "score": score,
+        "level": level,
+        "recommendation": rec
+    }
+
 @app.get("/api/analysis/history")
 async def get_history(request: Request):
     auth_header = request.headers.get("Authorization", "")

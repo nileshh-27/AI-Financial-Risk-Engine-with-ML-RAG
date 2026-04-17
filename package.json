@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"vite\" \"./risk_env/bin/python3 app.py\"",
+    "dev": "concurrently \"vite\" \"python app.py\"",
     "build": "vite build",
     "start": "node dist/public/index.html",
     "check": "tsc",
