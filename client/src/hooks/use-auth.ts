@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { requireSupabase } from "@/lib/supabase";
 import type { Session, User } from "@supabase/supabase-js";
 import { useLocation } from "wouter";
+import { queryClient } from "@/lib/queryClient";
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -64,6 +65,9 @@ export function useAuth() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      // Clear all cached queries so the new user gets fresh data
+      queryClient.clear();
+
       setSession(newSession);
       setUser(newSession?.user ?? null);
 

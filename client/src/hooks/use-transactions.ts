@@ -27,13 +27,15 @@ export function useTransactions() {
         supabase
           .from("transactions")
           .select("id,date,merchant,category,amount,channel,status,risk_flag")
+          .eq("user_id", session.session.user.id)
           .order("date", { ascending: false })
-          .limit(10000),
+          .limit(1000),
         supabase
           .from("parsed_transactions")
           .select("id,date,description,merchant,category,amount,txn_type,category_method")
+          .eq("user_id", session.session.user.id)
           .order("date", { ascending: false })
-          .limit(10000),
+          .limit(1000),
       ]);
 
       const manualRows: TransactionRow[] = (manualResult.data ?? []).map((r: any) => ({

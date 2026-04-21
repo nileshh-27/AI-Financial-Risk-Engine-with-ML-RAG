@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+pdfplumber
+pandas
+numpy
+scikit-learn
+joblib
+python-dotenv
+supabase
+ollama
+gunicorn
+pyjwt

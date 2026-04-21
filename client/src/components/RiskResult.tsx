@@ -81,11 +81,11 @@ export function RiskResult({ result }: RiskResultProps) {
           {result.level} RISK
         </Badge>
 
-        <div className="mt-8 w-full bg-black/30 border border-white/5 p-5 rounded-xl backdrop-blur-sm">
-          <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
-            AI Recommendation
+        <div className="mt-8 w-full bg-black/30 border border-white/5 p-5 rounded-xl backdrop-blur-sm max-h-[300px] overflow-y-auto">
+          <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4" /> AI Recommendation
           </h4>
-          <p className="text-lg font-medium leading-relaxed text-slate-200">{result.recommendation}</p>
+          <p className="text-sm font-medium leading-relaxed text-slate-200 whitespace-pre-wrap">{result.recommendation}</p>
         </div>
 
         <div className="mt-auto pt-8 text-xs font-mono text-muted-foreground/50 w-full text-center">

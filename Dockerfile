@@ -1,0 +1,44 @@
+# --- STEP 1: Build the Vite Frontend ---
+FROM node:20-slim AS build-frontend
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# --- STEP 2: Final Runtime Image ---
+FROM python:3.12-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    gnupg \
+    zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Set Up App Directory
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+# Copy built frontend from Stage 1 so app.py can serve it
+COPY --from=build-frontend /app/dist /app/dist
+
+# Environment Variables
+ENV PORT=7860
+ENV FLASK_ENV=production
+ENV OLLAMA_HOST=0.0.0.0
+
+# Expose port 7860
+EXPOSE 7860
+
+# Ensure entrypoint is executable
+RUN chmod +x scripts/entrypoint.sh
+ENTRYPOINT ["./scripts/entrypoint.sh"]

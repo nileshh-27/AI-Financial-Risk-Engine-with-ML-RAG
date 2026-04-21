@@ -146,18 +146,48 @@ def detect_bank(text: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Union Bank table parser (primary)
+# Universal statement parser
 # ──────────────────────────────────────────────────────────────
-def parse_union_bank(pdf) -> list[dict]:
-    """
-    Parse Union Bank statement tables.
-    Expected columns: Date | Txn Id | Remarks | Amount(₹) | Balance(₹)
-    Amount column has values like '20.0(Dr)', '1000.0(Cr)'.
-    """
+def _detect_universal_columns(table: list) -> dict:
+    """Dynamically scan headers to determine column layout regardless of bank."""
+    col_map = {}
+    for row in table[:5]:
+        if not row: continue
+        row_lower = [str(c).lower().strip() if c else "" for c in row]
+        for i, cell in enumerate(row_lower):
+            if "date" in cell and "value" not in cell:
+                if "date" not in col_map: col_map["date"] = i
+            elif "narration" in cell or "description" in cell or "particular" in cell or "remark" in cell:
+                if "remarks" not in col_map: col_map["remarks"] = i
+            elif "chq" in cell or "ref" in cell or ("txn" in cell and "id" in cell) or "cheque" in cell:
+                if "txn_id" not in col_map: col_map["txn_id"] = i
+            elif "withdrawal" in cell or "dr" in cell or "debit" in cell:
+                if "withdrawal" not in col_map: col_map["withdrawal"] = i
+            elif "deposit" in cell or "cr" in cell or "credit" in cell:
+                if "deposit" not in col_map: col_map["deposit"] = i
+            elif "amount" in cell and "balance" not in cell and "withdrawal" not in cell and "deposit" not in cell:
+                if "amount" not in col_map: col_map["amount"] = i
+            elif "balance" in cell:
+                if "balance" not in col_map: col_map["balance"] = i
+                
+        # If we have Date + Description + (Amount OR Withdrawal/Deposit), it's a valid header
+        has_dates_desc = "date" in col_map and "remarks" in col_map
+        has_amt = "amount" in col_map or ("withdrawal" in col_map and "deposit" in col_map)
+        if has_dates_desc and has_amt:
+            break
+            
+    return col_map
+
+
+def parse_universal_statement(pdf) -> list[dict]:
     transactions = []
+    saved_col_map = None
 
     for page in pdf.pages:
         tables = page.extract_tables()
+        if not tables or all(len(t) <= 1 for t in tables):
+            tables = page.extract_tables({"vertical_strategy": "text", "horizontal_strategy": "text"})
+            
         if not tables:
             continue
 
@@ -165,110 +195,161 @@ def parse_union_bank(pdf) -> list[dict]:
             if not table:
                 continue
 
-            # Detect header row to find column indices
-            col_map = _detect_columns(table)
+            col_map = _detect_universal_columns(table)
+            
+            # Save headers if found. A valid header has Date + Remarks + Some money structure.
+            has_dates_desc = "date" in col_map and "remarks" in col_map
+            has_amt = "amount" in col_map or ("withdrawal" in col_map and "deposit" in col_map)
+            
+            if has_dates_desc and has_amt:
+                saved_col_map = col_map
+            
+            active_map = saved_col_map if saved_col_map else col_map
+            
+            if "date" not in active_map or "remarks" not in active_map:
+                continue
 
+            last_txn = None
             for row in table:
                 if not row or len(row) < 3:
                     continue
 
-                # Skip header rows
                 row_text = ' '.join([str(c) for c in row if c]).lower()
-                if any(h in row_text for h in ['transaction id', 'remarks', 'amount', 'balance', 'date ']):
+                # Skip header/footer heuristics
+                if any(h in row_text for h in ['statement summary', 'opening balance', 'closing balance']):
                     continue
-                if 'opening balance' in row_text or 'closing balance' in row_text:
+                # If the row text looks exactly like the headers (withdrawal, deposit, amount), skip
+                if ("date" in row_text and ("particular" in row_text or "narration" in row_text or "remark" in row_text)) or "withdrawal" in row_text:
                     continue
 
-                # Extract date
-                date_val = _get_cell(row, col_map.get("date", 0))
+                date_val = _get_cell(row, active_map.get("date", 0))
                 date = parse_date(date_val) if date_val else None
+                
+                remarks = _get_cell(row, active_map.get("remarks", 1))
+
                 if not date:
+                    # Multi-line remark merger: if date is empty but we have remarks, append to the last transaction!
+                    if last_txn and remarks and len(remarks) > 2 and 'balance' not in remarks.lower():
+                        last_txn["description"] += " " + remarks.strip()
                     continue
 
-                # Extract transaction ID
-                txn_id = _get_cell(row, col_map.get("txn_id", 1)) or ""
-
-                # Extract remarks/description
-                remarks = _get_cell(row, col_map.get("remarks", 2)) or ""
+                txn_id = _get_cell(row, active_map.get("txn_id", -1))
                 if not remarks or len(remarks) < 3:
                     continue
 
-                # Extract amount with Dr/Cr type
-                amount_raw = _get_cell(row, col_map.get("amount", 3)) or ""
-                amount, txn_type = parse_amount_with_type(amount_raw)
+                amount = 0.0
+                txn_type = "debit"
 
-                if amount is None or amount == 0:
+                # Check unified amount column
+                if "amount" in active_map:
+                    amount_raw = _get_cell(row, active_map["amount"])
+                    amt, t_res = parse_amount_with_type(amount_raw)
+                    if amt:
+                        amount = amt
+                        if t_res:
+                            txn_type = t_res
+                        else:
+                            txn_type = _infer_type_from_remarks(remarks)
+                else:
+                    # Check split columns
+                    w_raw = _get_cell(row, active_map.get("withdrawal", -1))
+                    d_raw = _get_cell(row, active_map.get("deposit", -1))
+                    
+                    w_amt, _ = parse_amount_with_type(w_raw)
+                    d_amt, _ = parse_amount_with_type(d_raw)
+                    
+                    if w_amt and w_amt > 0:
+                        amount = w_amt
+                        txn_type = "debit"
+                    elif d_amt and d_amt > 0:
+                        amount = d_amt
+                        txn_type = "credit"
+                        
+                if amount == 0.0:
                     continue
 
-                # If type wasn't detected from the amount column, try the remarks
-                if txn_type is None:
-                    txn_type = _infer_type_from_remarks(remarks)
-
-                # Extract balance
-                balance_raw = _get_cell(row, col_map.get("balance", 4)) or ""
+                balance_raw = _get_cell(row, active_map.get("balance", -1))
                 balance, _ = parse_amount_with_type(balance_raw)
-                if balance is None:
-                    balance = 0.0
-
-                transactions.append({
+                
+                txn = {
                     "date": date,
-                    "txn_id": txn_id.strip(),
+                    "txn_id": txn_id.strip() if txn_id else "",
                     "description": remarks.strip(),
                     "amount": amount,
-                    "type": txn_type or "debit",
-                    "balance": balance,
-                })
+                    "type": txn_type,
+                    "balance": balance if balance is not None else 0.0,
+                }
+                transactions.append(txn)
+                last_txn = txn
 
     return transactions
 
-
-def _detect_columns(table: list) -> dict:
-    """Detect column positions from the header row."""
-    col_map = {"date": 0, "txn_id": 1, "remarks": 2, "amount": 3, "balance": 4}
-
-    for row in table[:3]:
-        if not row:
-            continue
-        row_lower = [str(c).lower().strip() if c else "" for c in row]
-        for i, cell in enumerate(row_lower):
-            if "date" in cell:
-                col_map["date"] = i
-            elif "transaction" in cell and "id" in cell:
-                col_map["txn_id"] = i
-            elif "remark" in cell or "narration" in cell or "particular" in cell or "description" in cell:
-                col_map["remarks"] = i
-            elif "amount" in cell and "balance" not in cell:
-                col_map["amount"] = i
-            elif "balance" in cell:
-                col_map["balance"] = i
-    return col_map
-
-
 def _get_cell(row: list, index: int) -> str:
-    if index < len(row) and row[index] is not None:
+    if index < len(row) and index >= 0 and row[index] is not None:
         return str(row[index]).strip()
     return ""
 
-
 def _infer_type_from_remarks(remarks: str) -> str:
-    """Infer debit/credit from UPI remarks like /DR/ or /CR/."""
+    """Infer debit/credit from UP remarks like /DR/ or /CR/."""
     r_upper = remarks.upper()
-    if "/DR/" in r_upper:
+    if "/DR/" in r_upper or "DEBIT" in r_upper:
         return "debit"
-    if "/CR/" in r_upper:
+    if "/CR/" in r_upper or "CREDIT" in r_upper or "CREDITED" in r_upper:
         return "credit"
-    if "DEBIT" in r_upper:
-        return "debit"
-    if "CREDIT" in r_upper or "CREDITED" in r_upper:
-        return "credit"
-    return "debit"  # Default to debit for most transactions
-
+    return "debit"
 
 # ──────────────────────────────────────────────────────────────
 # Generic text parser (fallback)
 # ──────────────────────────────────────────────────────────────
 def parse_generic_text(pdf) -> list[dict]:
     transactions = []
+    
+    # 1. Advanced ICICI/SBI multi-line split column detection
+    lines = []
+    for page in pdf.pages:
+        lines.extend((page.extract_text() or "").split('\n'))
+
+    icici_pattern = re.compile(r'^(\d+)\s+(\d{2}[/\-\.]\d{2}[/\-\.]\d{2,4})\s+([\d,\.]+)(?:\s+([\d,\.]+))?\s+([\d,\.]+)[\sA-Za-z0-9]*$')
+    
+    # We will build transactions list using a cascading buffer logic
+    has_icici = any(icici_pattern.match(l.strip()) for l in lines)
+    if has_icici:
+        buffer = []
+        for line in lines:
+            line_str = line.strip()
+            if not line_str: continue
+            
+            m = icici_pattern.match(line_str)
+            if m:
+                sno, date_raw, w_raw, d_raw, bal_raw = m.groups()
+                date = parse_date(date_raw)
+                w_amt = parse_amount_with_type(w_raw)[0] or 0.0
+                d_amt = parse_amount_with_type(d_raw)[0] if d_raw else 0.0
+                
+                amount = w_amt if w_amt > 0 else d_amt
+                txn_type = "debit" if w_amt > 0 else "credit"
+                    
+                # Clean up junk headers out of the buffer
+                clean_buffer = [b for b in buffer if not any(x in b for x in ["Cheque Number", "Balance", "S No.", "Transaction Remarks"])]
+                desc = " ".join(clean_buffer[-3:]) if len(clean_buffer) > 0 else "Transaction"
+                
+                if date:
+                    transactions.append({
+                        "date": date,
+                        "txn_id": "",
+                        "description": desc,
+                        "amount": amount,
+                        "type": txn_type,
+                        "balance": parse_amount_with_type(bal_raw)[0] or 0.0,
+                    })
+                buffer = []
+            else:
+                buffer.append(line_str)
+        
+        if transactions:
+            return transactions
+
+    # 2. Standard Single-Line Format Backoff
     patterns = [
         re.compile(
             r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'
@@ -326,47 +407,52 @@ def parse_pdf(file_path: str) -> dict:
             "period": { start, end } | None,
         }
     """
-    with pdfplumber.open(file_path) as pdf:
-        total_pages = len(pdf.pages)
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            total_pages = len(pdf.pages)
 
-        # Get text from first page for bank detection and account info
-        first_text = ""
-        for page in pdf.pages[:2]:
-            first_text += (page.extract_text() or "") + "\n"
+            # Get text from first page for bank detection and account info
+            first_text = ""
+            for page in pdf.pages[:2]:
+                first_text += (page.extract_text() or "") + "\n"
 
-        bank = detect_bank(first_text)
-        account_info = extract_account_info(first_text)
-        account_info["bank"] = bank
+            bank = detect_bank(first_text)
+            account_info = extract_account_info(first_text)
+            account_info["bank"] = bank
 
-        # Parse transactions
-        transactions = parse_union_bank(pdf)
+            # Process all standard and legacy format banks dynamically
+            transactions = parse_universal_statement(pdf)
 
-        # Fallback to generic text parsing
-        if not transactions:
-            transactions = parse_generic_text(pdf)
+            # Fallback to generic text parsing
+            if not transactions:
+                transactions = parse_generic_text(pdf)
 
-    # Deduplicate
-    seen = set()
-    unique = []
-    for t in transactions:
-        key = (t["date"], t["description"][:40], t["amount"], t["type"])
-        if key not in seen:
-            seen.add(key)
-            unique.append(t)
-    transactions = unique
+        # Deduplicate
+        seen = set()
+        unique = []
+        for t in transactions:
+            key = (t["date"], t["description"][:40], t["amount"], t["type"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(t)
+        transactions = unique
 
-    # Sort by date
-    transactions.sort(key=lambda x: x["date"])
+        # Sort by date
+        transactions.sort(key=lambda x: x["date"])
 
-    # Period
-    period = None
-    if transactions:
-        period = {"start": transactions[0]["date"], "end": transactions[-1]["date"]}
+        # Period
+        period = None
+        if transactions:
+            period = {"start": transactions[0]["date"], "end": transactions[-1]["date"]}
 
-    return {
-        "bank": bank,
-        "account_info": account_info,
-        "transactions": transactions,
-        "total_pages": total_pages,
-        "period": period,
-    }
+        return {
+            "bank": bank,
+            "account_info": account_info,
+            "transactions": transactions,
+            "total_pages": total_pages,
+            "period": period,
+        }
+    except Exception as e:
+        if "password" in str(e).lower():
+            raise Exception("PASSWORD_PROTECTED: This PDF is encrypted. Please upload a decrypted version or provide the password.")
+        raise e

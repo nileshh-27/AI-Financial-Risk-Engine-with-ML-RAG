@@ -6,7 +6,7 @@ import {
 import {
     TrendingUp, TrendingDown, Minus, Calendar, IndianRupee,
     AlertTriangle, RefreshCcw, ShieldAlert, BarChart3, FileText,
-    ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, Clock,
+    ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, Clock, Bot,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,13 +38,13 @@ export function AnalysisDashboard({ result }: AnalysisDashboardProps) {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            {/* Account Info */}
-            {accountInfo && (
-                <AccountInfoCard info={accountInfo} />
-            )}
-
             {/* Summary Cards */}
             <SummaryCards result={result} />
+
+            {/* AI Financial Assessment */}
+            {(result.llm_analysis || (result.summary as any)?.llm_analysis) && (
+                <LLMAssessmentCard analysis={result.llm_analysis || (result.summary as any).llm_analysis} />
+            )}
 
             {/* Category Breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -76,51 +76,7 @@ export function AnalysisDashboard({ result }: AnalysisDashboardProps) {
     );
 }
 
-/* ── Account Info ─────────────────────────────────────────────── */
-function AccountInfoCard({ info }: { info: NonNullable<PDFAnalysisResponse["account_info"]> }) {
-    if (!info.account_number && !info.account_name) return null;
-    return (
-        <Card className="bg-card/40 backdrop-blur-xl border-white/5 shadow-2xl">
-            <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-blue-500/10 rounded-xl">
-                        <Landmark className="h-6 w-6 text-blue-400" />
-                    </div>
-                    <div>
-                        <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-1">
-                            {info.bank ? info.bank.replace("_", " ") : "Bank Account Details"}
-                        </h3>
-                        <p className="text-xl font-bold font-mono text-white/90">
-                            {info.account_number || "A/C Not Found"}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 md:gap-8">
-                    {info.account_name && (
-                        <div>
-                            <p className="text-xs text-muted-foreground uppercase">Account Holder</p>
-                            <p className="font-semibold text-white truncate max-w-[200px]" title={info.account_name}>
-                                {info.account_name}
-                            </p>
-                        </div>
-                    )}
-                    {info.branch && (
-                        <div>
-                            <p className="text-xs text-muted-foreground uppercase">Branch</p>
-                            <p className="font-medium text-white truncate max-w-[150px]">{info.branch}</p>
-                        </div>
-                    )}
-                    {info.ifsc && (
-                        <div>
-                            <p className="text-xs text-muted-foreground uppercase">IFSC</p>
-                            <p className="font-mono text-white">{info.ifsc}</p>
-                        </div>
-                    )}
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
+
 
 /* ── Summary Cards ────────────────────────────────────────────── */
 function SummaryCards({ result }: { result: PDFAnalysisResponse }) {
@@ -648,6 +604,56 @@ function FileReports({ reports }: { reports: PDFAnalysisResponse["file_reports"]
                         </div>
                     ))}
                 </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+/* ── AI Assessment Card ───────────────────────────────────────── */
+function LLMAssessmentCard({ analysis }: { analysis: string }) {
+    // Basic Markdown parser for bullets and bold text
+    const sections = analysis.split("\n").filter(line => line.trim().length > 0);
+
+    return (
+        <Card className="bg-card/60 backdrop-blur-xl border border-primary/30 shadow-[0_0_20px_rgba(6,182,212,0.1)] overflow-hidden relative group">
+            <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent pointer-events-none" />
+
+            <CardHeader className="pb-3 border-b border-white/5 bg-background/50">
+                <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center border border-primary/30 shadow-lg">
+                        <Bot className="h-5 w-5 text-primary animate-pulse" />
+                    </div>
+                    <div>
+                        <CardTitle className="text-lg text-primary">AI Financial Assessment</CardTitle>
+                        <CardDescription>Powered by Gemma 3:1B</CardDescription>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-3 relative z-10">
+                {sections.map((line, i) => {
+                    const isBullet = line.trim().startsWith('*') || line.trim().startsWith('-');
+                    // replace consecutive bullets properly
+                    let formattedLine = line.replace(/^[\*\-\s]+/, '');
+
+                    // Parse bold markers **text**
+                    const parts = formattedLine.split(/(\*\*.*?\*\*)/g);
+
+                    return (
+                        <div key={i} className={`flex items-start gap-3 ${isBullet ? "ml-2" : ""}`}>
+                            {isBullet && (
+                                <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-primary/80 shrink-0" />
+                            )}
+                            <p className="text-sm md:text-base leading-relaxed text-slate-200">
+                                {parts.map((part, j) => {
+                                    if (part.startsWith('**') && part.endsWith('**')) {
+                                        return <strong key={j} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+                                    }
+                                    return <span key={j}>{part}</span>;
+                                })}
+                            </p>
+                        </div>
+                    );
+                })}
             </CardContent>
         </Card>
     );

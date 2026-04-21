@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Send, Bot, User, X, MessageSquare, Loader2 } from "lucide-react";
+import { requireSupabase } from "@/lib/supabase";
 
 interface Message {
     id: string;
@@ -55,26 +56,47 @@ export function ChatBot() {
                 content: m.content
             }));
 
+            const supabase = requireSupabase();
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token || "";
+
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ messages: apiMessages })
             });
 
             if (!res.ok) throw new Error("Failed to get response");
+            
+            const reader = res.body?.getReader();
+            if (!reader) throw new Error("No response stream");
+            
+            const decoder = new TextDecoder("utf-8");
+            let done = false;
+            
+            const botMessageId = Date.now().toString();
+            setMessages((prev) => [
+                ...prev,
+                { id: botMessageId, role: "assistant", content: "", timestamp: new Date() }
+            ]);
 
-            const data = await res.json();
-
-            const botMessage: Message = {
-                id: Date.now().toString(),
-                role: data.message.role,
-                content: data.message.content,
-                timestamp: new Date()
-            };
-
-            setMessages((prev) => [...prev, botMessage]);
+            while (!done) {
+                const { value, done: readerDone } = await reader.read();
+                done = readerDone;
+                if (value) {
+                    const text = decoder.decode(value, { stream: true });
+                    setMessages((prev) => 
+                        prev.map(msg => 
+                            msg.id === botMessageId 
+                            ? { ...msg, content: msg.content + text } 
+                            : msg
+                        )
+                    );
+                }
+            }
         } catch (error) {
             console.error(error);
             const errorMessage: Message = {

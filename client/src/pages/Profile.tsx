@@ -454,7 +454,7 @@ export default function ProfilePage() {
                         <td className="p-4 align-middle">{log.type}</td>
                         <td className="p-4 align-middle">{log.summary}</td>
                         <td className="p-4 align-middle text-center">
-                          <Badge variant={log.level === 'High' ? 'destructive' : log.level === 'Medium' ? 'warning' : 'default'} className="shadow-sm">
+                          <Badge variant={log.level === 'High' ? 'destructive' : log.level === 'Medium' ? 'secondary' : 'default'} className="shadow-sm">
                             {log.level}
                           </Badge>
                         </td>

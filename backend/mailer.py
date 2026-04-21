@@ -34,7 +34,7 @@ def send_analysis_email(user_email: str, summary_data: dict, file_reports: list)
     <html>
     <body style="font-family: Arial, sans-serif; color: #333;">
         <div style="max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-            <h2 style="color: #6366f1;">Union Bank - AI Financial Risk Report</h2>
+            <h2 style="color: #6366f1;">AI Financial Risk Engine - Analysis Report</h2>
             <p>Dear Valued User,</p>
             <p>Your bank statement has been successfully analyzed by the proprietary ML Risk Engine.</p>
             

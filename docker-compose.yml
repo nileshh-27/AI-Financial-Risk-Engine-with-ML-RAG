@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  risk-engine:
+    build: .
+    image: financial-risk-engine:latest
+    container_name: risk_engine_ai
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

@@ -240,7 +240,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {latestAnalysis && (
+      {!isLoading && analytics.total === 0 && !latestAnalysis ? (
+        <Card className="bg-card/40 backdrop-blur-xl border-white/5 shadow-2xl mt-8 flex flex-col items-center justify-center p-12 text-center min-h-[400px]">
+          <ShieldCheck className="h-16 w-16 text-muted-foreground/50 mb-6" />
+          <h2 className="text-2xl font-bold font-mono mb-2 text-white">Welcome to the Risk Engine</h2>
+          <p className="text-muted-foreground mb-8 max-w-md">Your dashboard is currently empty. Head over to the Risk Engine to upload your bank statements or run a manual assessment to see your data.</p>
+          <Button onClick={() => window.location.href = '/risk'} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+            Go to Risk Engine
+          </Button>
+        </Card>
+      ) : (
+        <>
+          {latestAnalysis && (
         <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-white/10 shadow-2xl">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
             <div className="flex items-center gap-3">
@@ -490,6 +501,8 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }
