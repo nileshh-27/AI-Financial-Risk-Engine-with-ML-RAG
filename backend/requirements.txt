@@ -8,3 +8,4 @@ joblib
 python-dotenv
 supabase
 google-generativeai
+ollama
