@@ -22,21 +22,18 @@ export function useTransactions() {
       const { data: session } = await supabase.auth.getSession();
       if (!session.session) return null;
 
-      // Fetch from both tables in parallel
-      const [manualResult, parsedResult] = await Promise.all([
-        supabase
-          .from("transactions")
-          .select("id,date,merchant,category,amount,channel,status,risk_flag")
-          .order("date", { ascending: false })
-          .limit(1000),
-        supabase
-          .from("parsed_transactions")
-          .select("id,date,description,merchant,category,amount,txn_type,category_method")
-          .order("date", { ascending: false })
-          .limit(1000),
-      ]);
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("id,date,merchant,category,amount,channel,status,risk_flag")
+        .order("date", { ascending: false })
+        .limit(1000);
 
-      const manualRows: TransactionRow[] = (manualResult.data ?? []).map((r: any) => ({
+      if (error) {
+        console.error("Error fetching transactions:", error);
+        return [];
+      }
+
+      const all: TransactionRow[] = (data ?? []).map((r: any) => ({
         id: String(r.id).slice(0, 8),
         date: String(r.date),
         merchant: String(r.merchant),
@@ -45,26 +42,9 @@ export function useTransactions() {
         channel: String(r.channel),
         status: String(r.status),
         riskFlag: String(r.risk_flag ?? "Low"),
-        source: "manual" as const,
+        source: String(r.channel) === "pdf" ? "pdf" : "manual",
       }));
 
-      // Extract rows from parsed_transactions
-      const parsedRows: TransactionRow[] = (parsedResult.data ?? []).map((r: any) => ({
-        id: String(r.id).slice(0, 8),
-        date: String(r.date),
-        merchant: String(r.merchant || r.description),
-        category: String(r.category),
-        amount: Number(r.amount ?? 0),
-        channel: String(r.category_method ?? "pdf"),
-        status: r.txn_type === "credit" ? "Credit" : "Debit",
-        riskFlag: "Low",
-        txnType: String(r.txn_type),
-        source: "pdf" as const,
-      }));
-
-      // Merge and sort by date descending
-      const all = [...manualRows, ...parsedRows];
-      all.sort((a, b) => b.date.localeCompare(a.date));
       return all;
     },
   });

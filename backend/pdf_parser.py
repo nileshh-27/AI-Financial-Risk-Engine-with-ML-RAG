@@ -371,48 +371,98 @@ def _infer_type_from_remarks(remarks: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Generic text parser (fallback)
+# Generic text parser (fallback) — broadened patterns
 # ──────────────────────────────────────────────────────────────
 def parse_generic_text(pdf) -> list[dict]:
     transactions = []
-    patterns = [
-        re.compile(
-            r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'
-            r'(.+?)\s+'
-            r'([\d,]+\.?\d*)\s*\(?\s*(Dr|Cr)\s*\)?',
-            re.IGNORECASE
-        ),
-    ]
+    # Pattern 1: date ... description ... amount(Dr/Cr)
+    pat_drcr = re.compile(
+        r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'
+        r'(.+?)\s+'
+        r'([\d,]+\.?\d*)\s*\(?\s*(Dr|Cr)\s*\)?',
+        re.IGNORECASE
+    )
+    # Pattern 2: date ... description ... debit_amount ... credit_amount ... balance
+    # Matches lines with multiple numeric columns
+    pat_multi = re.compile(
+        r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'
+        r'(.+?)\s+'
+        r'([\d,]+\.?\d+)\s+'
+        r'([\d,]+\.?\d+)',
+        re.IGNORECASE
+    )
+    # Pattern 3: date ... description ... standalone amount (no Dr/Cr)
+    pat_simple = re.compile(
+        r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'
+        r'(.{5,}?)\s+'
+        r'([\d,]+\.\d{2})\s*$',
+        re.IGNORECASE
+    )
     for page in pdf.pages:
         text = page.extract_text() or ""
         for line in text.split('\n'):
             line = line.strip()
             if not line or len(line) < 10:
                 continue
-            for pattern in patterns:
-                match = pattern.search(line)
-                if match:
-                    groups = match.groups()
-                    date = parse_date(groups[0])
-                    if not date:
-                        continue
-                    description = groups[1].strip()
-                    amount_str = groups[2].replace(',', '')
-                    try:
-                        amount = round(float(amount_str), 2)
-                    except ValueError:
-                        continue
-                    dr_cr = groups[3].lower()
-                    txn_type = "debit" if dr_cr == "dr" else "credit"
-                    transactions.append({
-                        "date": date,
-                        "txn_id": "",
-                        "description": description,
-                        "amount": amount,
-                        "type": txn_type,
-                        "balance": 0,
-                    })
-                    break
+            # Skip header/footer lines
+            line_lower = line.lower()
+            if any(kw in line_lower for kw in ['opening balance', 'closing balance', 
+                    'page ', 'statement', 'date ', 'narration', 'particular', 'withdrawal', 'deposit']):
+                continue
+
+            # Try pattern 1 (Dr/Cr)
+            match = pat_drcr.search(line)
+            if match:
+                groups = match.groups()
+                date = parse_date(groups[0])
+                if not date:
+                    continue
+                description = groups[1].strip()
+                amount_str = groups[2].replace(',', '')
+                try:
+                    amount = round(float(amount_str), 2)
+                except ValueError:
+                    continue
+                if amount == 0:
+                    continue
+                dr_cr = groups[3].lower()
+                txn_type = "debit" if dr_cr == "dr" else "credit"
+                transactions.append({
+                    "date": date,
+                    "txn_id": "",
+                    "description": description,
+                    "amount": amount,
+                    "type": txn_type,
+                    "balance": 0,
+                })
+                continue
+
+            # Try pattern 3 (simple amount at end of line)
+            match = pat_simple.search(line)
+            if match:
+                groups = match.groups()
+                date = parse_date(groups[0])
+                if not date:
+                    continue
+                description = groups[1].strip()
+                amount_str = groups[2].replace(',', '')
+                try:
+                    amount = round(float(amount_str), 2)
+                except ValueError:
+                    continue
+                if amount == 0:
+                    continue
+                txn_type = _infer_type_from_remarks(description)
+                transactions.append({
+                    "date": date,
+                    "txn_id": "",
+                    "description": description,
+                    "amount": amount,
+                    "type": txn_type,
+                    "balance": 0,
+                })
+                continue
+
     return transactions
 
 
@@ -434,6 +484,7 @@ def parse_pdf(file_path: str) -> dict:
     """
     with pdfplumber.open(file_path) as pdf:
         total_pages = len(pdf.pages)
+        print(f"[PDF] Opened PDF: {total_pages} page(s)")
 
         # Get text from first page for bank detection and account info
         first_text = ""
@@ -443,16 +494,30 @@ def parse_pdf(file_path: str) -> dict:
         bank = detect_bank(first_text)
         account_info = extract_account_info(first_text)
         account_info["bank"] = bank
+        print(f"[PDF] Detected bank: {bank}")
+        print(f"[PDF] First 500 chars of page 1:\n{first_text[:500]}")
+
+        # Log table extraction info
+        for i, page in enumerate(pdf.pages[:3]):
+            tables = page.extract_tables()
+            print(f"[PDF] Page {i+1}: {len(tables)} table(s) found")
+            if tables:
+                for ti, table in enumerate(tables):
+                    print(f"[PDF]   Table {ti+1}: {len(table)} row(s), first row: {table[0] if table else 'empty'}")
 
         # Parse transactions based on detected bank profile
         if bank == "hdfc":
             transactions = parse_hdfc_bank(pdf)
+            print(f"[PDF] HDFC parser extracted {len(transactions)} transactions")
         else:
             transactions = parse_union_bank(pdf)
+            print(f"[PDF] Union Bank parser extracted {len(transactions)} transactions")
 
         # Fallback to generic text parsing
         if not transactions:
+            print("[PDF] Primary parser found nothing, trying generic text fallback...")
             transactions = parse_generic_text(pdf)
+            print(f"[PDF] Generic text parser extracted {len(transactions)} transactions")
 
     # Deduplicate
     seen = set()

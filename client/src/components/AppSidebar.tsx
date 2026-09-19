@@ -46,11 +46,9 @@ export function AppSidebar() {
                             {navItems.map((item) => (
                                 <SidebarMenuItem key={item.href}>
                                     <SidebarMenuButton asChild isActive={isActive(location, item.href)} tooltip={item.label}>
-                                        <Link href={item.href}>
-                                            <a className="flex items-center gap-3">
-                                                <item.icon className="h-4 w-4" />
-                                                <span>{item.label}</span>
-                                            </a>
+                                        <Link href={item.href} className="flex items-center gap-3">
+                                            <item.icon className="h-4 w-4" />
+                                            <span>{item.label}</span>
                                         </Link>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>

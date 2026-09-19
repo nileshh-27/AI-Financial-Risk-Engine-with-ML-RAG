@@ -1,30 +1,10 @@
 import type { Express } from "express";
 import type { Server } from "http";
+import http from "http";
 import { api, riskInputSchema, chatRequestSchema } from "@shared/routes";
 import { z } from "zod";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
 
-// Configure multer for PDF uploads
-const uploadDir = path.join(process.cwd(), "tmp", "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB per file
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype === "application/pdf") {
-      cb(null, true);
-    } else {
-      cb(new Error("Only PDF files are allowed"));
-    }
-  },
-});
-
-const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:5001";
+const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:5002";
 
 // Simple helper to calculate risk
 function calculateRisk(input: z.infer<typeof riskInputSchema>) {
@@ -139,58 +119,50 @@ export async function registerRoutes(
 
   // ── Financial Analysis Engine Proxy Routes ──────────────────────
 
-  // PDF Upload & Analysis
-  app.post(api.analysis.upload.path, checkAuth, upload.array("files", 20), async (req: any, res) => {
-    try {
-      const files = req.files as Express.Multer.File[];
-      if (!files || files.length === 0) {
-        return res.status(400).json({ message: "No PDF files uploaded" });
-      }
+  // PDF Upload & Analysis — raw streaming proxy (no re-encoding)
+  // Pipes the browser's multipart/form-data body directly to the Python backend.
+  // This avoids Node's FormData/Blob re-encoding which Werkzeug rejects with 422.
+  app.post(api.analysis.upload.path, checkAuth, (req: any, res) => {
+    const targetUrl = new URL(`${PYTHON_BACKEND_URL}/api/analysis/upload`);
 
-      // Forward files to Python backend
-      const formData = new FormData();
-      for (const file of files) {
-        const fileBuffer = fs.readFileSync(file.path);
-        const blob = new Blob([fileBuffer], { type: "application/pdf" });
-        formData.append("files", blob, file.originalname);
-      }
-
-      const authHeader = req.headers.authorization || "";
-
-      const pyResponse = await fetch(`${PYTHON_BACKEND_URL}/api/analyze-pdf`, {
+    const proxyReq = http.request(
+      {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port,
+        path: targetUrl.pathname,
         method: "POST",
         headers: {
-          Authorization: authHeader,
+          "content-type": req.headers["content-type"] || "",
+          "content-length": req.headers["content-length"] || "",
+          authorization: req.headers.authorization || "",
         },
-        body: formData,
-      });
-
-      // Clean up uploaded files
-      for (const file of files) {
-        try { fs.unlinkSync(file.path); } catch { }
+      },
+      (proxyRes) => {
+        res.status(proxyRes.statusCode || 500);
+        const ct = proxyRes.headers["content-type"];
+        if (ct) res.setHeader("content-type", ct);
+        proxyRes.pipe(res);
       }
+    );
 
-      if (!pyResponse.ok) {
-        const errorText = await pyResponse.text();
-        return res.status(pyResponse.status).json({
-          message: "Analysis engine error",
-          detail: errorText,
+    proxyReq.on("error", (err) => {
+      console.error("Analysis upload proxy error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          message: "Failed to process PDF files",
+          detail: err.message,
         });
       }
+    });
 
-      const analysisResult = await pyResponse.json();
-      res.json(analysisResult);
-    } catch (err: any) {
-      console.error("Analysis upload error:", err);
-      res.status(500).json({ message: "Failed to process PDF files", detail: err.message });
-    }
+    req.pipe(proxyReq);
   });
 
   // Prediction endpoint
   app.post(api.analysis.predict.path, checkAuth, async (req: any, res) => {
     try {
       const authHeader = req.headers.authorization || "";
-      const pyResponse = await fetch(`${PYTHON_BACKEND_URL}/api/predict`, {
+      const pyResponse = await fetch(`${PYTHON_BACKEND_URL}/api/analysis/predict`, {
         method: "POST",
         headers: {
           Authorization: authHeader,
@@ -230,36 +202,27 @@ export async function registerRoutes(
     }
   });
 
-  // Chatbot Integration via Ollama
+  // Chatbot Integration via Python Backend
   app.post(api.chat.send.path, async (req, res) => {
     try {
       const { messages } = chatRequestSchema.parse(req.body);
+      const authHeader = req.headers.authorization || "";
 
-      const payload = {
-        model: "llama2-uncensored:7b",
-        messages: [
-          { role: "system", content: "You are a Risk Analyst AI assistant integrated into a financial risk dashboard. You provide concise, insightful analysis on risk models, transactions, portfolio performance, and market trends. Keep answers relatively short and helpful." },
-          ...messages
-        ],
-        stream: false
-      };
-
-      const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const pyResponse = await fetch(`${PYTHON_BACKEND_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages }),
       });
 
-      if (!ollamaRes.ok) {
-        throw new Error(`Ollama API returned ${ollamaRes.status} ${ollamaRes.statusText}`);
+      if (!pyResponse.ok) {
+        const errorText = await pyResponse.text();
+        return res.status(pyResponse.status).json({ message: errorText });
       }
 
-      const ollamaData = await ollamaRes.json();
-
-      res.json({
-        message: ollamaData.message
-      });
-
+      res.json(await pyResponse.json());
     } catch (err) {
       console.error("Chat proxy error:", err);
       if (err instanceof z.ZodError) {

@@ -25,7 +25,7 @@ from predictor import predict_next_fy
 from mailer import send_analysis_email
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5000", "http://127.0.0.1:5000", "http://localhost:3000"])
+CORS(app, origins=["http://localhost:5000", "http://127.0.0.1:5000", "http://localhost:5001", "http://127.0.0.1:5001", "http://localhost:3000"])
 
 # Supabase setup
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
@@ -94,6 +94,10 @@ def analyze_pdf():
         return jsonify({"error": "Unauthorized"}), 401
 
     files = request.files.getlist("files")
+    print(f"[DEBUG] Upload request received. Content-Type: {request.content_type}")
+    print(f"[DEBUG] Files received: {len(files)} - {[f.filename for f in files]}")
+    print(f"[DEBUG] Form keys: {list(request.form.keys())}")
+    print(f"[DEBUG] File keys: {list(request.files.keys())}")
     if not files:
         return jsonify({"error": "No PDF files uploaded"}), 400
 
@@ -107,14 +111,17 @@ def analyze_pdf():
             file_reports.append({"filename": file.filename, "error": "Not a PDF file", "transactions": 0})
             continue
 
-        # Save temporarily
+        # Save temporarily — close temp file BEFORE saving on Windows (file locking)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        tmp_path = tmp.name
+        tmp.close()  # Must close before file.save() on Windows
         try:
-            file.save(tmp.name)
-            tmp.close()
+            file.save(tmp_path)
+            saved_size = os.path.getsize(tmp_path)
+            print(f"[DEBUG] Saved {file.filename} to {tmp_path} ({saved_size} bytes)")
 
             # Parse PDF
-            result = parse_pdf(tmp.name)
+            result = parse_pdf(tmp_path)
             transactions = result["transactions"]
             
             if result.get("account_info") and not account_info:
@@ -130,10 +137,13 @@ def analyze_pdf():
 
             all_transactions.extend(transactions)
         except Exception as e:
+            import traceback
+            print(f"[ERROR] Failed to process {file.filename}: {e}")
+            traceback.print_exc()
             file_reports.append({"filename": file.filename, "error": str(e), "transactions": 0})
         finally:
             try:
-                os.unlink(tmp.name)
+                os.unlink(tmp_path)
             except Exception:
                 pass
 
@@ -332,8 +342,8 @@ def predict():
 
     try:
         sb = get_supabase()
-        result = sb.table("parsed_transactions")\
-            .select("date,description,amount,txn_type,category")\
+        result = sb.table("transactions")\
+            .select("date,merchant,amount,status,category")\
             .eq("user_id", user_id)\
             .order("date")\
             .execute()
@@ -341,9 +351,9 @@ def predict():
         transactions = [
             {
                 "date": r["date"],
-                "description": r["description"],
+                "description": r["merchant"],
                 "amount": float(r["amount"]),
-                "type": r["txn_type"],
+                "type": "credit" if r["status"] == "Credit" else "debit",
                 "category": r["category"],
             }
             for r in (result.data or [])
@@ -379,6 +389,6 @@ def analysis_history():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
+    port = int(os.environ.get("PYTHON_PORT", 5002))
     print(f"Financial Analysis Engine starting on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True)
