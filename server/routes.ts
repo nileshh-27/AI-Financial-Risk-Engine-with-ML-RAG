@@ -130,7 +130,7 @@ export async function registerRoutes(
     const proxyReq = requestModule.request(
       {
         hostname: targetUrl.hostname,
-        port: targetUrl.port,
+        port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
         path: targetUrl.pathname,
         method: "POST",
         headers: {
