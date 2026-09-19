@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import http from "http";
+import https from "https";
 import { api, riskInputSchema, chatRequestSchema } from "@shared/routes";
 import { z } from "zod";
 
@@ -124,8 +125,9 @@ export async function registerRoutes(
   // This avoids Node's FormData/Blob re-encoding which Werkzeug rejects with 422.
   app.post(api.analysis.upload.path, checkAuth, (req: any, res) => {
     const targetUrl = new URL(`${PYTHON_BACKEND_URL}/api/analysis/upload`);
+    const requestModule = targetUrl.protocol === 'https:' ? https : http;
 
-    const proxyReq = http.request(
+    const proxyReq = requestModule.request(
       {
         hostname: targetUrl.hostname,
         port: targetUrl.port,
